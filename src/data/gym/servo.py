@@ -44,4 +44,12 @@ class ServoSimulation(object):
 
 
 def create_rd50(dt=0.001):
-    return ServoSimulation(0.04, 1.2e-4, 1.2e-4, 0.47, 5e-3, 0.042, 2e-5, 10, dt)
+    return ServoSimulation(0.04, 8.2e-6, 0.6e-4, 0.47, 0.05, 0, 1e-6, 9, dt)
+
+
+def create_rd60(dt=0.001):
+    return ServoSimulation(0.05, 17.09e-6, 1e-4, 1, 0.05, 0, 1e-6, 9, dt)
+
+
+def create_rd85(dt=0.001):
+    return ServoSimulation(0.076, 1.08e-4, 2.5e-4, 3.1, 0.05, 0, 1e-6, 24, dt)
