@@ -1,7 +1,7 @@
 faraday
 ==============================
 
-Rozum Robotics Machine Learning Research
+Machine Learning for Optimal Control Research
 
 Project Organization
 ------------
