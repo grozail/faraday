@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
-
+from src.visualization.tbx import board
 
 def _init_weights(m):
     if isinstance(m, nn.Linear):

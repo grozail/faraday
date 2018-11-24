@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 from src.models.gae import gae
-
+from src.visualization.tbx import board
 
 class PPO(object):
     def __init__(self, model, optimizer, device, env, epochs=4, mb_size=20):
@@ -14,6 +14,9 @@ class PPO(object):
         self.env = env
         self.epochs = epochs
         self.mini_batch_size = mb_size
+        self.update_idx = 0
+        self.test_idx = 0
+        self.test_steps = 0
 
     def ppo_iter(self, states, actions, log_probs, returns, advantage):
         batch_size = states.size(0)
@@ -36,8 +39,11 @@ class PPO(object):
 
                 actor_loss = - torch.min(surr1, surr2).mean()
                 critic_loss = (return_ - value).pow(2).mean()
-
                 loss = 0.5 * critic_loss + actor_loss - 0.001 * entropy
+
+                board.add_scalar('actor_loss', actor_loss, self.update_idx)
+                board.add_scalar('critic_loss', critic_loss, self.update_idx)
+                self.update_idx += 1
 
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -47,14 +53,21 @@ class PPO(object):
         state = self.env.reset()
         done = False
         total_reward = 0
+        steps = 0
         while not done:
             state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
             dist, _ = self.model(state)
             action = dist.sample()
             torch.clamp(action, -self.model.max_output_value, self.model.max_output_value)
-            next_state, reward, done, _ = self.env.step(action.cpu().numpy())
+            next_state, reward, done, info = self.env.step(action.cpu().numpy())
+            board.add_scalar('test/dynamic_error', info['dynamic_error'], self.test_idx)
             state = next_state
             total_reward += total_reward
+            self.test_idx += 1
+            steps += 1
+        self.test_steps = max(self.test_steps, steps)
+        board.add_scalar('test/steps_done', self.test_steps, self.test_idx)
+        board.add_scalar('test/total_reward', total_reward, self.test_idx)
         return total_reward
 
     def train(self, max_frames, num_steps):
@@ -78,10 +91,15 @@ class PPO(object):
 
                 action = dist.sample()
                 torch.clamp(action, -self.model.max_output_value, self.model.max_output_value)
-                next_state, reward, done, _ = self.env.step(action.cpu().numpy())
-                print(done, '\t', reward)
+                next_state, reward, done, info = self.env.step(action.cpu().numpy())
+
                 log_prob = dist.log_prob(action)
                 entropy += dist.entropy().mean()
+
+                board.add_scalar('entropy', entropy, frame_idx)
+                board.add_scalar('reward', reward, frame_idx)
+                board.add_scalar('dynamic_error', info['dynamic_error'], frame_idx)
+                board.add_scalars('lpa', {'achieved': info['achieved_state'][2], 'desired': info['desired_state'][2]}, frame_idx)
 
                 log_probs.append(log_prob)
                 values.append(value)
@@ -100,7 +118,6 @@ class PPO(object):
                 if frame_idx % 10000 == 0:
                     test_reward = np.mean([self.test() for _ in range(10)])
                     test_rewards.append(test_reward)
-                    print('test reward: ', test_reward)
 
             next_state = torch.FloatTensor(next_state).unsqueeze(0).to(self.device)
             _, next_value = self.model(next_state)

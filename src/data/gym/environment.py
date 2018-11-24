@@ -2,7 +2,7 @@ import numpy as np
 import gym
 from .trajectory import RandomTrajectoryGenerationProcess, trajectory_with_current_to_csv
 from .config import ControlConfiguration
-
+from src.visualization.tbx import board
 
 class SingleServoEnv(gym.GoalEnv):
     def __init__(self,
@@ -22,15 +22,16 @@ class SingleServoEnv(gym.GoalEnv):
 
         self.trajectory = process.run_uniform()
         trajectory_with_current_to_csv(self.servo, self.trajectory)
+        self.current = self.trajectory[:, 4]
         self.trajectory = self.trajectory[:, 0:4]
 
         self.dynamic_error = 0
-        self.max_dynamic_error = 0.1
+        self.max_dynamic_error_deg = 0.1
         self.index = 1
         self.reset()
 
     def is_done_by_dynamic_error(self):
-        return self.dynamic_error > self.max_dynamic_error
+        return self.dynamic_error > self.max_dynamic_error_deg
 
     def compute_dynamic_error(self, achieved_goal, desired_goal, info):
         self.dynamic_error += np.rad2deg(np.abs(achieved_goal[3] - desired_goal[3])) / 100
@@ -48,9 +49,13 @@ class SingleServoEnv(gym.GoalEnv):
         self.compute_dynamic_error(achieved_state, desired_state, info)
         done = self.is_done_by_dynamic_error()
         self.index += 1
+        info['dynamic_error'] = self.dynamic_error
+        info['achieved_state'] = achieved_state
+        info['desired_state'] = desired_state
         try:
             observation = np.concatenate([self.servo.state(), self.get_prediction_horizon()])
         except IndexError:
+            info['expected_current'] = self.current[1]
             observation = np.concatenate([self.servo.state() for _ in range(self.control_config.prediction_horizon + 1)])
             done = True
             reward = 5
