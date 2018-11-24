@@ -37,7 +37,7 @@ class SingleServoEnv(gym.GoalEnv):
         return self.dynamic_error
 
     def compute_reward(self, achieved_goal, desired_goal, info):
-        return np.exp(-np.sum(np.sqrt(achieved_goal - desired_goal)))
+        return np.exp(-np.sum(np.square(achieved_goal - desired_goal)))
 
     def step(self, action):
         ac = float(action)

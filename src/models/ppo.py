@@ -5,23 +5,26 @@ import torch.optim as optim
 import numpy as np
 from src.models.gae import gae
 
+
 class PPO(object):
-    def __init__(self, model, optimizer, device, env):
-        self.model = model.to(device)
-        self.optimizer = optimizer.to(device)
+    def __init__(self, model, optimizer, device, env, epochs=4, mb_size=20):
+        self.model = model
+        self.optimizer = optimizer
         self.device = device
         self.env = env
+        self.epochs = epochs
+        self.mini_batch_size = mb_size
 
-    def ppo_iter(self, mini_batch_size, states, actions, log_probs, returns, advantage):
+    def ppo_iter(self, states, actions, log_probs, returns, advantage):
         batch_size = states.size(0)
-        for _ in range(batch_size // mini_batch_size):
-            rand_ids = np.random.randint(0, batch_size, mini_batch_size)
+        for _ in range(batch_size // self.mini_batch_size):
+            rand_ids = np.random.randint(0, batch_size, self.mini_batch_size)
             yield states[rand_ids, :], actions[rand_ids, :], log_probs[rand_ids, :], returns[rand_ids, :], advantage[
                                                                                                            rand_ids, :]
 
-    def ppo_update(self, ppo_epochs, mini_batch_size, states, actions, log_probs, returns, advantages, clip_param=0.2):
-        for _ in range(ppo_epochs):
-            for state, action, old_log_probs, return_, advantage in self.ppo_iter(mini_batch_size, states, actions,
+    def ppo_update(self, states, actions, log_probs, returns, advantages, clip_param=0.2):
+        for _ in range(self.epochs):
+            for state, action, old_log_probs, return_, advantage in self.ppo_iter(states, actions,
                                                                                   log_probs, returns, advantages):
                 dist, value = self.model(state)
                 entropy = dist.entropy().mean()
@@ -50,11 +53,11 @@ class PPO(object):
             action = dist.sample()
             torch.clamp(action, -self.model.max_output_value, self.model.max_output_value)
             next_state, reward, done, _ = self.env.step(action.cpu().numpy())
+            state = next_state
             total_reward += total_reward
         return total_reward
 
-
-    def train(self, max_frames, num_steps, ):
+    def train(self, max_frames, num_steps):
         frame_idx = 0
         early_stop = False
         state = self.env.reset()
@@ -70,34 +73,36 @@ class PPO(object):
             entropy = 0
 
             for _ in range(num_steps):
-                state = torch.FloatTensor(state).to(self.device)
+                state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
                 dist, value = self.model(state)
 
                 action = dist.sample()
                 torch.clamp(action, -self.model.max_output_value, self.model.max_output_value)
                 next_state, reward, done, _ = self.env.step(action.cpu().numpy())
-                if done:
-                    next_state = self.env.reset()
+                print(done, '\t', reward)
                 log_prob = dist.log_prob(action)
                 entropy += dist.entropy().mean()
 
                 log_probs.append(log_prob)
                 values.append(value)
-                rewards.append(torch.FloatTensor(reward).unsqueeze(1).to(self.device))
-                masks.append(torch.FloatTensor(1 - done).unsqueeze(1).to(self.device))
+                rewards.append(torch.FloatTensor([reward]).unsqueeze(0).to(self.device))
+                masks.append(torch.FloatTensor([1 - done]).unsqueeze(0).to(self.device))
 
                 states.append(state)
                 actions.append(action)
 
+                if done:
+                    next_state = self.env.reset()
+
                 state = next_state
                 frame_idx += 1
 
-                if frame_idx % 1000 == 0:
+                if frame_idx % 10000 == 0:
                     test_reward = np.mean([self.test() for _ in range(10)])
                     test_rewards.append(test_reward)
                     print('test reward: ', test_reward)
 
-            next_state = torch.FloatTensor(next_state).to(self.device)
+            next_state = torch.FloatTensor(next_state).unsqueeze(0).to(self.device)
             _, next_value = self.model(next_state)
             returns = gae(next_value, rewards, masks, values)
 
@@ -108,4 +113,4 @@ class PPO(object):
             actions = torch.cat(actions)
             advantage = returns - values
 
-            self.ppo_update(ppo_epochs, mini_batch_size, states, actions, log_probs, returns, advantage)
+            self.ppo_update(states, actions, log_probs, returns, advantage)
