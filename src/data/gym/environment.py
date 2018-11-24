@@ -1,6 +1,6 @@
 import numpy as np
 import gym
-from .trajectory import RandomTrajectoryGenerationProcess
+from .trajectory import RandomTrajectoryGenerationProcess, trajectory_with_current_to_csv
 from .config import ControlConfiguration
 
 
@@ -19,7 +19,11 @@ class SingleServoEnv(gym.GoalEnv):
                                                 shape=((control_config.prediction_horizon + 1) * self.servo.state().size,),
                                                 dtype='float32')
         self.control_config = control_config
-        self.trajectory = process.run_uniform()[:, 0:4]
+
+        self.trajectory = process.run_uniform()
+        trajectory_with_current_to_csv(self.servo, self.trajectory)
+        self.trajectory = self.trajectory[:, 0:4]
+
         self.dynamic_error = 0
         self.max_dynamic_error = 0.1
         self.index = 1
